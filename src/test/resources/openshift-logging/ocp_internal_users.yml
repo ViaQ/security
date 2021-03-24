@@ -1,0 +1,12 @@
+spock:
+  hash: $2a$12$GI9JXffO3WUjTsU7Yy3E4.LBxC2ILo66Zg/rr79BpikSL2IIRezQa
+  #password is: spock
+  roles:
+    - vulcan
+    - starfleet
+kirk:
+  hash: $2a$12$xZOcnwYPYQ3zIadnlQIJ0eNhX1ngwMkTN.oMwkKxoGvDVPn4/6XtO
+  #password is: kirk
+  roles:
+    - captains
+    - starfleet

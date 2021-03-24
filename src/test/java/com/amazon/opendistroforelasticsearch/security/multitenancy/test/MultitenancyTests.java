@@ -383,5 +383,4 @@ public class MultitenancyTests extends SingleClusterTest {
         System.out.println(res.getBody());
         Assert.assertTrue(res.getBody().contains(".kibana_-900636979_kibanaro"));
     }
-
 }
