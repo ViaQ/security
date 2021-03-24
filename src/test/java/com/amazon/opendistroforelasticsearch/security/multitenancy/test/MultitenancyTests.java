@@ -384,4 +384,100 @@ public class MultitenancyTests extends SingleClusterTest {
         Assert.assertTrue(res.getBody().contains(".kibana_-900636979_kibanaro"));
     }
 
+    @Test
+    public void testKibanaUserTenantMigration() throws Exception {
+        final Settings settings = Settings.builder()
+                //.put("opendistro_security.config_index_name", ".security")
+                .put("opendistro_security.restapi.roles_enabled", "kibana_server")
+                //.put("opendistro_security.dynamic.kibana.do_not_fail_on_forbidden", true)
+                .build();
+
+        final DynamicSecurityConfig dsc = new DynamicSecurityConfig()
+                //.setSecurityIndexName(".security")
+                .setConfig("ocp_config.yml")
+                .setSecurityRoles("ocp_roles.yml")
+                .setSecurityRolesMapping("ocp_roles_mapping.yml")
+                //.setSecurityInternalUsers("ocp_internal_users.yml")
+                .setSecurityActionGroups("ocp_action_groups.yml");
+
+        setup(Settings.EMPTY, dsc, settings);
+
+        try (TransportClient tc = getInternalTransportClient()) {
+            Map indexSettings = new HashMap();
+            indexSettings.put("number_of_shards", 1);
+            indexSettings.put("number_of_replicas", 1);
+
+            tc.admin().indices().create(new CreateIndexRequest(".kibana_1")
+                    .alias(new Alias(".kibana"))
+                    .settings(indexSettings))
+                    .actionGet();
+
+            tc.admin().indices().create(new CreateIndexRequest(".kibana_-1159834508_testuser1_2")
+                    .settings(indexSettings))
+                    .actionGet();
+
+            tc.admin().indices().create(new CreateIndexRequest(".kibana_-1159834508_testuser1_3")
+                    .alias(new Alias(".kibana_-1159834508_testuser1"))
+                    .settings(indexSettings))
+                    .actionGet();
+
+            String kibUserBodyJSON = "{\"buildNum\" : 20385,\"defaultIndex\" : \"9f63ccf0-8cb1-11eb-994c-7551a3e70b0d\"}";
+            tc.index(new IndexRequest(".kibana_-1159834508_testuser1_2")
+                    .type("doc")
+                    .id("6.8.1")
+                    .setRefreshPolicy(RefreshPolicy.IMMEDIATE)
+                    .source(kibUserBodyJSON, XContentType.JSON)).actionGet();
+            tc.index(new IndexRequest(".kibana_-1159834508_testuser1_3")
+                    .type("doc")
+                    .id("6.8.1")
+                    .setRefreshPolicy(RefreshPolicy.IMMEDIATE)
+                    .source(kibUserBodyJSON, XContentType.JSON)).actionGet();
+
+            for (int i = 1; i < 21; i++) {
+                String leadingZeros = "00000";
+                if (i >= 10) {
+                    leadingZeros = "0000";
+                }
+
+                String appIndexName = "app-" + leadingZeros + i;
+                CreateIndexRequest cir = new CreateIndexRequest(appIndexName)
+                        .alias(new Alias("app"))
+                        .settings(indexSettings);
+
+                if (i == 20) {
+                    cir = cir.alias(new Alias("app-write"));
+                }
+                tc.admin().indices().create(cir).actionGet();
+
+                String doc = "{\"message\": \"This is just a test\", \"namespace\": \"test\", \"kubernetes\": {\"namespace_name\": \"test\"}}";
+                tc.index(new IndexRequest(appIndexName)
+                        .type("doc")
+                        .setRefreshPolicy(RefreshPolicy.IMMEDIATE)
+                        .source(doc, XContentType.JSON)).actionGet();
+            }
+        }
+
+        final RestHelper rh = nonSslRestHelper();
+        HttpResponse res;
+
+        res = rh.executeDeleteRequest(
+                // Use .kibana for user testuser1, but this should be replaced by .kibana_-1159834508_testuser1
+                // DELETE -> .kibana/doc/6.8.1 -> .kibana_-1159834508_testuser1/doc/6.8.1 -> .kibana_-1159834508_testuser1_3/doc/6.8.1
+                ".kibana/doc/6.8.1",
+
+                // Use x-forwarded* headers to allow extended-proxy authentication
+                new BasicHeader("x-forwarded-for", "127.0.0.1"),
+                new BasicHeader("x-forwarded-user", "testuser1"),
+                new BasicHeader("x-forwarded-roles", "project_user"),
+                new BasicHeader("x-ocp-ns", "test"),
+
+                // Fake Cookie storage for selected tenant in Kibana
+                new BasicHeader("securitytenant", "__user__")
+        );
+
+        Assert.assertEquals(HttpStatus.SC_OK, res.getStatusCode());
+        System.out.println(res.getBody());
+        Assert.assertTrue(res.getBody().contains(".kibana_-1159834508_testuser1"));
+    }
+
 }
