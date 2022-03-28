@@ -129,7 +129,7 @@ public class IndexManagementTests extends SingleClusterTest {
         RestHelper.HttpResponse res;
 
         res = rh.executePostRequest(
-                "app-000001/_doc/_delete_by_query",
+                "app-000001/_delete_by_query",
                 "{\"query\":{\"match\":{ \"message\": \"This is just a test\"}}}",
                 // Use x-forwarded* headers to allow extended-proxy authentication
                 new BasicHeader("x-forwarded-for", "127.0.0.1"),
@@ -139,7 +139,8 @@ public class IndexManagementTests extends SingleClusterTest {
 
         System.out.println(res.getBody());
         Assert.assertEquals(HttpStatus.SC_OK, res.getStatusCode());
-        Assert.assertTrue(res.getBody().contains("{\"acknowledged\":true}"));
+        Assert.assertTrue(res.getBody().contains("\"failures\":[]"));
+        Assert.assertTrue(res.getBody().contains("\"deleted\":1"));
     }
 
     @Test
